@@ -41,7 +41,7 @@ impl Default for Settings {
         Self {
             timeout: Duration::from_secs(300),
             heartbeat_timeout: Duration::from_secs(0),
-            expires_after: Duration::from_secs(300),
+            expires_after: Duration::from_secs(1209600),
             retries: 0,
             retry_delays: Vec::new(),
         }
