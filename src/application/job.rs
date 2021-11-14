@@ -439,6 +439,7 @@ impl RedisJob {
 
             let result: Option<()> = redis::pipe()
                 .atomic()
+                .lrem(self.queue(conn).await?.jobs_key, 1, self.id)
                 .hset(&self.key, job::Field::Status, job::Status::Running)
                 .hset(&self.key, job::Field::StartedAt, DateTime::now())
                 .rpush(keys::RUNNING_KEY, self.id())
