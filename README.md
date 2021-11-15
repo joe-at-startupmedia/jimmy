@@ -3,7 +3,16 @@
 Jimmy is a language-agnostic, Redis-backed job queue server with an HTTP interface and a focus on long running tasks.
 It was forked from Ocypod with additonal concerns in mind.
 
-## Features
+# UI Client
+[Sebastion](https://github.com/nidhhoggr/sebastion)
+
+## Features added to Ocypod fork
+* Ability to retry jobs
+* Ability to specify which queue types get expired
+* Adding file system persistence for failed job creation attempts
+* Adding lists for Compeleted and TimedOut (for better insight with constant-time lookup)
+
+## Base Ocypod Features
 
 * simple setup - only requirement is Redis
 * language agnostic - uses HTTP/JSON protocol, clients/workers can be
@@ -16,4 +25,3 @@ It was forked from Ocypod with additonal concerns in mind.
 * job inspection - check the status of any jobs submitted to the system
 * tagging - custom tags allow easy grouping and searching of related jobs
 * automatic retries - re-queue jobs on failure or timeout
-* Ability to retry jobs
