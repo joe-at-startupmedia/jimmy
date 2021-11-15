@@ -1,7 +1,7 @@
 # Jimmy
 
 Jimmy is a language-agnostic, Redis-backed job queue server with an HTTP interface and a focus on long running tasks.
-It was forked from Ocypod with additonal concerns in mind.
+It was forked from Ocypod with additional concerns in mind (see added features below).
 
 # UI Client
 [Sebastion](https://github.com/nidhhoggr/sebastion)
