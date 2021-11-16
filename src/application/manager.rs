@@ -271,9 +271,25 @@ impl RedisManager {
         let mut requeued: Vec<u64> = Vec::new();
 
         let mut pipeline = redis::pipe();
+        
         let pipe = &mut pipeline;
+
+        let mut ended: Vec<u64> = Vec::new();
+
+        for job_id in conn.lrange::<_, Vec<u64>>(keys::ENDED_KEY, 0, -1).await? {
+            ended.push(job_id)
+        }
+
         for job_id in conn.lrange::<_, Vec<u64>>(keys::FAILED_KEY, 0, -1).await? {
-            pipe.hget(RedisJob::new(job_id).key(), job::RetryMeta::fields());
+            if !ended.contains(&job_id) {
+                pipe.hget(RedisJob::new(job_id).key(), job::RetryMeta::fields());
+            }
+        }
+        
+        for job_id in conn.lrange::<_, Vec<u64>>(keys::TIMEDOUT_KEY, 0, -1).await? {
+            if !ended.contains(&job_id) {
+                pipe.hget(RedisJob::new(job_id).key(), job::RetryMeta::fields());
+            }
         }
 
         for retry_meta in vec_from_redis_pipe::<C, job::RetryMeta>(conn, pipe).await? {
@@ -286,7 +302,8 @@ impl RedisManager {
                 }
                 job::RetryAction::End => {
                     let job = RedisJob::new(retry_meta.id());
-                    job.end_failed(conn).await?;
+                    let status = job.status(conn).await?;
+                    job.end(conn, &status).await?;
                 }
                 job::RetryAction::None => (),
             }

@@ -195,6 +195,7 @@ impl RedisJob {
         Ok(pipe
             .hset(&self.key, job::Field::Status, job::Status::Cancelled)
             .hset(&self.key, job::Field::EndedAt, DateTime::now())
+            .lrem(keys::ENDED_KEY, 1, self.id) // its possible that the key is already in the ended list
             .lrem(keys::RUNNING_KEY, 1, self.id) // remove from running queue if present
             .lrem(keys::FAILED_KEY, 1, self.id) // remove from failed queue if present
             .lrem(keys::TIMEDOUT_KEY, 1, self.id) // remove from timedout queue if present
@@ -203,42 +204,35 @@ impl RedisJob {
             .incr(keys::STAT_JOBS_CANCELLED_KEY, 1))
     }
 
-    /// Add commands to pipeline to mark this job as failed or timed out.
-    ///
-    /// Note: caller is responsible for ensuring job exists and status change is valid before this is called.
-    pub fn fail<'b>(&self, pipe: &'b mut Pipeline, status: &job::Status) -> &'b mut Pipeline {
-        assert!(status == &job::Status::TimedOut || status == &job::Status::Failed);
-        let stats_key = match status {
-            job::Status::TimedOut => keys::STAT_JOBS_TIMED_OUT_KEY,
-            job::Status::Failed => keys::STAT_JOBS_FAILED_KEY,
-            _ => panic!("fail() was called with invalid status of: {}", status),
-        };
-
-        pipe.hset(&self.key, job::Field::Status, status)
+    ///sets a job as failed
+    pub fn fail<'b>(&self, pipe: &'b mut Pipeline) -> &'b mut Pipeline {
+        pipe.hset(&self.key, job::Field::Status, job::Status::Failed)
             .hset(&self.key, job::Field::EndedAt, DateTime::now())
             .lrem(keys::RUNNING_KEY, 1, self.id)
             .rpush(keys::FAILED_KEY, self.id)
-            .incr(stats_key, 1)
+            .incr(keys::STAT_JOBS_FAILED_KEY, 1)
     }
 
-    /// Move this job to the ended queue if it's failed or timed out.
-    pub async fn end_failed<C: ConnectionLike + Send>(&self, conn: &mut C) -> OcyResult<bool> {
+    ///sets a job as timedout
+    pub fn timeout<'b>(&self, pipe: &'b mut Pipeline) -> &'b mut Pipeline {
+        pipe.hset(&self.key, job::Field::Status, job::Status::TimedOut)
+            .hset(&self.key, job::Field::EndedAt, DateTime::now())
+            .lrem(keys::RUNNING_KEY, 1, self.id)
+            .rpush(keys::TIMEDOUT_KEY, self.id)
+            .incr(keys::STAT_JOBS_TIMED_OUT_KEY, 1)
+    }
+
+
+    /// Move this job to the ended queue if it's failed
+    pub async fn end<C: ConnectionLike + Send>(&self, conn: &mut C, status: &job::Status) -> OcyResult<bool> {
+        assert!(status == &job::Status::TimedOut || status == &job::Status::Failed);
         let result: bool = transaction_async!(conn, &[&self.key], {
             let mut pipe = redis::pipe();
             let pipe_ref = pipe.atomic();
             match self.status(conn).await {
-                Ok(job::Status::Failed) => {
+                Ok(job::Status::Failed | job::Status::TimedOut) => {
+                    //we just add it to ENDED without removing it from TIMEDOUT or ENDED
                     let result: Option<()> = pipe_ref
-                        .lrem(keys::FAILED_KEY, 1, self.id)
-                        .rpush(keys::ENDED_KEY, self.id)
-                        .query_async(conn)
-                        .await?;
-                    result.map(|_| true)
-                }
-                Ok(job::Status::TimedOut) => {
-                    let result: Option<()> = pipe_ref
-                        .lrem(keys::FAILED_KEY, 1, self.id)
-                        .rpush(keys::TIMEDOUT_KEY, self.id)
                         .rpush(keys::ENDED_KEY, self.id)
                         .query_async(conn)
                         .await?;
@@ -382,8 +376,8 @@ impl RedisJob {
         // ensure status transitions are valid
         Ok(match (current_status, status) {
             (job::Status::Running, job::Status::Completed) => self.complete(pipe),
-            (job::Status::Running, cause @ job::Status::Failed) => self.fail(pipe, cause),
-            (job::Status::Running, cause @ job::Status::TimedOut) => self.fail(pipe, cause),
+            (job::Status::Running, job::Status::Failed) => self.fail(pipe),
+            (job::Status::Running, job::Status::TimedOut) => self.timeout(pipe),
             (job::Status::Running, job::Status::Cancelled) => self.cancel(conn, pipe).await?,
             (job::Status::Failed, job::Status::Cancelled) => self.cancel(conn, pipe).await?,
             (job::Status::Queued, job::Status::Cancelled) => self.cancel(conn, pipe).await?,
@@ -393,7 +387,9 @@ impl RedisJob {
             (job::Status::Failed, job::Status::Queued) => self.requeue(conn, pipe, false).await?,
             (job::Status::TimedOut, job::Status::Queued) => self.requeue(conn, pipe, false).await?,
             (from, to) => {
-                return Err(OcyError::conflict(format!("Cannot change status from {} to {}", from, to)))
+                let error_msg = format!("Cannot change status from {} to {}", from, to);
+                debug!("{}", error_msg);
+                return Err(OcyError::conflict(error_msg))
             }
         })
     }
@@ -494,7 +490,7 @@ impl RedisJob {
                 .has_timed_out()
             {
                 let result: Option<()> = self
-                    .fail(redis::pipe().atomic(), &job::Status::TimedOut)
+                    .timeout(redis::pipe().atomic())
                     .query_async(conn)
                     .await?;
                 result.map(|_| true)
