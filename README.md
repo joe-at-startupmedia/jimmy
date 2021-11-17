@@ -10,7 +10,9 @@ It was forked from Ocypod with additional concerns in mind (see added features b
 * Ability to retry jobs
 * Ability to specify which queue types get expired
 * Adding file system persistence for failed job creation attempts [#1](https://github.com/joe-at-startupmedia/ocypod/issues/1)
+* Adds an API method to reattempt a failed job attempt
 * Adding lists for Compeleted and TimedOut (for better insight with constant-time lookup)
+* Adds an API method to fetch a specific job from the queue by its id. (moves from queued to running) [sebastion#5](https://github.com/nidhhoggr/sebastion/issues/5)
 
 ## Base Ocypod Features
 
