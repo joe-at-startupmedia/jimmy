@@ -126,6 +126,11 @@ async fn main() -> std::io::Result<()> {
                             .route(web::post().to(handlers::queue::create_job)),
                     )
                     .service(
+                        web::resource("/{name}/job/{job_id}")
+                            //get a specific job from the given queue
+                            .route(web::get().to(handlers::queue::fetch_job)),
+                    )
+                    .service(
                         // Reattmped a failed attempt
                         web::resource("/{name}/reattempt/{timestamp}")
                             .route(web::get().to(handlers::queue::reattempt_job)),

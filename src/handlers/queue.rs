@@ -220,6 +220,34 @@ pub async fn next_job(
     }
 }
 
+pub async fn fetch_job(
+    web::Path((queue_name, job_id)): web::Path<(String, u64)>,
+    data: web::Data<ApplicationState>,
+) -> impl Responder {
+    let mut conn = data.redis_conn_manager.clone();
+
+    match RedisManager::fetch_queued_job(&mut conn, &queue_name, job_id).await {
+        Ok(Some(job)) => HttpResponse::Ok().json(job),
+        Ok(None) => match &data.config.server.next_job_delay {
+            Some(delay) if !delay.is_zero() => {
+                tokio::time::delay_for(delay.0).await;
+                HttpResponse::NoContent().into()
+            }
+            _ => HttpResponse::NoContent().into(),
+        },
+        Err(OcyError::NoSuchQueue(_)) => HttpResponse::NotFound().into(),
+        Err(OcyError::RedisConnection(err)) => {
+            error!("[queue:{}] failed to fetch job {}: {}", &queue_name, job_id, err);
+            HttpResponse::ServiceUnavailable().body(err)
+        }
+        Err(err) => {
+            error!("[queue:{}] failed to fetch job {}: {}", &queue_name, job_id, err);
+            HttpResponse::InternalServerError().body(err)
+        }
+    }
+}
+
+
 pub async fn reattempt_job(
     web::Path((queue_name, timestamp)): web::Path<(String, i64)>,
     data: web::Data<ApplicationState>,

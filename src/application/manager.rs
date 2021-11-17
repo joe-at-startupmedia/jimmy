@@ -584,6 +584,72 @@ impl RedisManager {
             keys::LIMBO_KEY
         );
 
+        let job_payload = RedisManager::queued_job_payload(conn, &job).await?;
+        
+        Ok(job_payload)
+    }
+
+    /// Fetch specific job from given queue, if any.
+    ///
+    /// # Returns
+    ///
+    /// A `job::Payload` if a job is found, or `None` if the queue is empty.
+    pub async fn fetch_queued_job<C: ConnectionLike + Send>(
+        conn: &mut C,
+        queue_name: &str,
+        job_id: u64
+    ) -> OcyResult<Option<job::Payload>> {
+        debug!("Client requested job from queue={}", queue_name);
+        // queue can be deleted between these two calls, but will just return no job, so harmless
+        let queue = RedisQueue::from_string(queue_name)?
+            .ensure_exists(conn)
+            .await?;
+        match conn
+            .lrem::<_, _, Option<u64>>(queue.jobs_key(), 1, Some(job_id))
+            .await? {
+            Some(removed) => {
+                if removed < 1 {
+                    return Ok(None);
+                }
+                match conn
+                    .rpush::<_, _, Option<u64>>(keys::LIMBO_KEY, Some(job_id))
+                    .await? {
+                    Some(added) => {
+                        if added < 1 {
+                            return Ok(None);
+                        }
+
+                        let job = RedisJob::new(job_id);
+
+                        debug!(
+                            "[{}{}] moved from {} -> {}",
+                            keys::JOB_PREFIX,
+                            job.id(),
+                            queue.jobs_key(),
+                            keys::LIMBO_KEY
+                        );
+
+                        let job_payload = RedisManager::queued_job_payload(conn, &job).await?;
+
+                        return Ok(job_payload)
+                    },
+                    None => return Ok(None),
+                }
+            },
+            None => return Ok(None),
+        };
+    }
+
+    /// Get the payload of a fetched job
+    ///
+    /// # Returns
+    ///
+    /// A `job::Payload` if a job is found, or `None` if the queue is empty.
+    pub async fn queued_job_payload<C: ConnectionLike + Send>(
+        conn: &mut C,
+        job: &RedisJob,
+    ) -> OcyResult<Option<job::Payload>> {
+
         // if Redis goes down before the following, job will be left in limbo, requeued at startup
         let job_payload: job::Payload = transaction_async!(conn, &[&job.key], {
             let input: Option<String> = conn.hget(&job.key, job::Field::Input).await?;
@@ -604,6 +670,7 @@ impl RedisManager {
         info!("[{}{}] started", keys::JOB_PREFIX, job_payload.id());
         Ok(Some(job_payload))
     }
+
 
     /// Create a new job on given queue.
     pub async fn create_job<C: ConnectionLike + Send>(
