@@ -864,16 +864,17 @@ async fn job_expiry() {
 
     let jobs = create_job_in_all_states(&mut conn, DEFAULT_QUEUE, &job_req).await;
     let job_id_running = jobs[&job::Status::Running];
-    let job_id_completed = jobs[&job::Status::Completed];
     let job_id_failed = jobs[&job::Status::Failed];
+    let job_id_completed = jobs[&job::Status::Completed];
     let job_id_cancelled = jobs[&job::Status::Cancelled];
     let job_id_timed_out = jobs[&job::Status::TimedOut];
     let job_id_queued = jobs[&job::Status::Queued];
 
     // confirm all jobs are in correct queues
     assert_eq!(RedisManager::running_queue_size(&mut conn).await.unwrap(), 1);
-    assert_eq!(RedisManager::failed_queue_size(&mut conn).await.unwrap(), 2); // one failed, one timed out
+    assert_eq!(RedisManager::failed_queue_size(&mut conn).await.unwrap(), 1);
     assert_eq!(RedisManager::ended_queue_size(&mut conn).await.unwrap(), 2); // one completed, one cancelled
+    assert_eq!(RedisManager::timedout_queue_size(&mut conn).await.unwrap(), 1);
     assert_eq!(qw.queue_size(&mut conn).await, 1);
 
     // jobs in ended queue (i.e. one completed and one cancelled) should expire
@@ -884,14 +885,20 @@ async fn job_expiry() {
     expired.sort();
     assert_eq!(expired, expected_expired);
 
+    assert_eq!(RedisManager::ended_queue_size(&mut conn).await.unwrap(), 0); // completed and cancelled get removed 
+
     // no retries, failed/timed out jobs should be moved to ended queue, then expire next call
     assert_eq!(RedisManager::check_job_retries(&mut conn).await.unwrap(), Vec::<u64>::new());
      let mut expected_expired = vec![job_id_failed, job_id_timed_out];
     expected_expired.sort();
+
+    assert_eq!(RedisManager::ended_queue_size(&mut conn).await.unwrap(), 2); // one failed, one timed_out
+
     tokio::time::delay_for(time::Duration::from_secs(2)).await;
     let mut expired = RedisManager::check_job_expiry(&mut conn).await.unwrap();
     expired.sort();
     assert_eq!(expired, expected_expired);
+
 
     assert_eq!(RedisManager::job_status(&mut conn, job_id_running).await,   Ok(job::Status::Running));
     assert_eq!(RedisManager::job_status(&mut conn, job_id_completed).await, Err(OcyError::NoSuchJob(job_id_completed)));

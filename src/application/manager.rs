@@ -252,6 +252,11 @@ impl RedisManager {
         Ok(conn.llen(keys::ENDED_KEY).await?)
     }
 
+    /// Get total number of timedout jobs across all queues.
+    pub async fn timedout_queue_size<C: ConnectionLike + Send>(conn: &mut C) -> OcyResult<u64> {
+        Ok(conn.llen(keys::TIMEDOUT_KEY).await?)
+    }
+
     /// Get a list of job IDs that are currently in a given queue.
     pub async fn queue_job_ids<C: ConnectionLike + Send>(
         conn: &mut C,
