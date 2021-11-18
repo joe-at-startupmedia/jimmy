@@ -733,8 +733,12 @@ impl RedisManager {
             let tags_json: serde_json::Value = tags.as_slice().into();
             pipe.hset(&job.key, job::Field::Tags, tags_json.to_string());
             for tag in tags {
-                let key = format!("{}{}", keys::TAG_PREFIX, tag);
-                pipe.sadd(key, job.id());
+                match RedisTag::from_str(tag) {
+                    Ok(tag) => {
+                        pipe.sadd(tag.key(), job.id());
+                    },
+                    Err(e) => info!("tag is invalid: {}", e)
+                }
             }
         }
 

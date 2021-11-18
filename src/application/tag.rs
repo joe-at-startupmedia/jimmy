@@ -4,6 +4,8 @@ use redis::{aio::ConnectionLike, AsyncCommands};
 
 use crate::models::{OcyError, OcyResult};
 
+use super::keys;
+
 /// Represents a tag that can be attached to jobs in Redis.
 ///
 /// Mostly used as convenient way of operating on a tag with a key.
@@ -30,7 +32,7 @@ impl RedisTag {
 
     /// Get Redis key to add tagged jobs under.
     pub fn build_key(tag: &str) -> String {
-        format!("tag:{}", tag)
+        format!("{}{}", keys::TAG_PREFIX, tag)
     }
 
     /// Get list of job IDs with this tag.

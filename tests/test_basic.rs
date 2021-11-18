@@ -319,20 +319,20 @@ async fn job_deletion() {
     assert!(RedisManager::delete_job(&mut conn, job_id_completed).await.unwrap());
     assert!(!RedisManager::tagged_job_ids(&mut conn, "tag").await.unwrap().contains(&job_id_completed));
 
-    assert_eq!(RedisManager::failed_queue_size(&mut conn, ).await.unwrap(), 2);
+    assert_eq!(RedisManager::failed_queue_size(&mut conn, ).await.unwrap(), 1);
     assert!(RedisManager::tagged_job_ids(&mut conn, "tag").await.unwrap().contains(&job_id_failed));
     assert!(RedisManager::delete_job(&mut conn, job_id_failed).await.unwrap());
-    assert_eq!(RedisManager::failed_queue_size(&mut conn).await.unwrap(), 1);
+    assert_eq!(RedisManager::failed_queue_size(&mut conn).await.unwrap(), 0);
     assert!(!RedisManager::tagged_job_ids(&mut conn, "tag").await.unwrap().contains(&job_id_failed));
 
     assert!(RedisManager::tagged_job_ids(&mut conn, "tag").await.unwrap().contains(&job_id_cancelled));
     assert!(RedisManager::delete_job(&mut conn, job_id_cancelled).await.unwrap());
     assert!(!RedisManager::tagged_job_ids(&mut conn, "tag").await.unwrap().contains(&job_id_cancelled));
 
-    assert_eq!(RedisManager::failed_queue_size(&mut conn).await.unwrap(), 1);
+    assert_eq!(RedisManager::timedout_queue_size(&mut conn).await.unwrap(), 1);
     assert!(RedisManager::tagged_job_ids(&mut conn, "tag").await.unwrap().contains(&job_id_timed_out));
     assert!(RedisManager::delete_job(&mut conn, job_id_timed_out).await.unwrap());
-    assert_eq!(RedisManager::failed_queue_size(&mut conn).await.unwrap(), 0);
+    assert_eq!(RedisManager::timedout_queue_size(&mut conn).await.unwrap(), 0);
     assert!(!RedisManager::tagged_job_ids(&mut conn, "tag").await.unwrap().contains(&job_id_timed_out));
 
     assert_eq!(RedisManager::queue_size(&mut conn, DEFAULT_QUEUE).await.unwrap(), 1);
