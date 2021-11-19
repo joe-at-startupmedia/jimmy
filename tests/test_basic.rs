@@ -9,6 +9,7 @@ use redis::aio::Connection;
 use jimmy::application::RedisManager;
 use jimmy::models::{queue, job, ServerInfo, Duration, OcyError};
 use crate::support::*;
+use jimmy::config::ServerConfig;
 
 mod support;
 
@@ -862,6 +863,8 @@ async fn job_expiry() {
         ..Default::default()
     };
 
+    let config = ServerConfig::default();
+
     let jobs = create_job_in_all_states(&mut conn, DEFAULT_QUEUE, &job_req).await;
     let job_id_running = jobs[&job::Status::Running];
     let job_id_failed = jobs[&job::Status::Failed];
@@ -881,7 +884,7 @@ async fn job_expiry() {
     let mut expected_expired = vec![job_id_completed, job_id_cancelled,];
     expected_expired.sort();
     tokio::time::delay_for(time::Duration::from_secs(2)).await;
-    let mut expired = RedisManager::check_job_expiry(&mut conn).await.unwrap();
+    let mut expired = RedisManager::check_job_expiry(&mut conn, config.expiry_check_statuses.clone()).await.unwrap();
     expired.sort();
     assert_eq!(expired, expected_expired);
 
@@ -895,7 +898,7 @@ async fn job_expiry() {
     assert_eq!(RedisManager::ended_queue_size(&mut conn).await.unwrap(), 2); // one failed, one timed_out
 
     tokio::time::delay_for(time::Duration::from_secs(2)).await;
-    let mut expired = RedisManager::check_job_expiry(&mut conn).await.unwrap();
+    let mut expired = RedisManager::check_job_expiry(&mut conn, config.expiry_check_statuses.clone()).await.unwrap();
     expired.sort();
     assert_eq!(expired, expected_expired);
 

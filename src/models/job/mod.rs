@@ -8,7 +8,7 @@ pub use self::payload::Payload;
 pub use self::request::{CreateRequest, UpdateRequest};
 pub use self::status::{Status, ALL_STATUSES};
 
-use crate::models::{DateTime, Duration, OcyResult};
+use crate::models::{DateTime, Duration, OcyResult, job};
 use redis::{self, aio::ConnectionLike, AsyncCommands, FromRedisValue, ToRedisArgs};
 use serde::ser::{Serialize, SerializeMap, Serializer};
 use std::collections::{HashMap, HashSet};
@@ -324,16 +324,15 @@ impl ExpiryMeta {
         &FIELDS
     }
 
-    pub fn should_expire(&self) -> bool {
+    pub fn should_expire(&self, expiry_check_statuses: &Vec<job::Status>) -> bool {
         // no retry metadata means that job has been deleted
         if !self.0.exists() {
             return false;
         }
 
-        let config = crate::config::parse_config_from_cli_args();
-
         let job_status = self.0.status();
-        if !config.server.expiry_check_statuses.contains(&job_status) {
+
+        if !expiry_check_statuses.contains(&job_status) {
             return false;
         }
 

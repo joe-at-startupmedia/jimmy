@@ -342,7 +342,7 @@ impl RedisManager {
     }
 
     /// Check all jobs in the ended queue for expiry. Any expired jobs will be entirely removed from the queue system.
-    pub async fn check_job_expiry<C: ConnectionLike + Send>(conn: &mut C) -> OcyResult<Vec<u64>> {
+    pub async fn check_job_expiry<C: ConnectionLike + Send>(conn: &mut C, expiry_check_statuses: Vec<job::Status>) -> OcyResult<Vec<u64>> {
         debug!("Checking for expired jobs");
         let mut expired: Vec<u64> = Vec::new();
 
@@ -353,9 +353,9 @@ impl RedisManager {
         }
 
         for expiry_meta in vec_from_redis_pipe::<C, job::ExpiryMeta>(conn, pipe).await? {
-            if expiry_meta.should_expire() {
+            if expiry_meta.should_expire(&expiry_check_statuses) {
                 let job = RedisJob::new(expiry_meta.id());
-                if job.apply_expiry(conn).await? {
+                if job.apply_expiry(conn, &expiry_check_statuses).await? {
                     expired.push(job.id());
                 }
             }

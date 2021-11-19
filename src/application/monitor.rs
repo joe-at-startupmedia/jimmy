@@ -5,12 +5,13 @@ use std::time::Duration;
 use log::{error, info};
 
 use crate::config::ServerConfig;
+use crate::models::job;
 
 /// Start all background tasks that perform monitoring/cleanup.
 pub fn start_monitors(conn: redis::aio::ConnectionManager, config: &ServerConfig) {
     start_timeout_monitor(conn.clone(), config.timeout_check_interval.0);
     start_retry_monitor(conn.clone(), config.retry_check_interval.0);
-    start_expiry_monitor(conn, config.expiry_check_interval.0);
+    start_expiry_monitor(conn, config.expiry_check_interval.0, config.expiry_check_statuses.clone());
 }
 
 /// Start periodic background task that checks jobs for timeouts.
@@ -50,7 +51,7 @@ fn start_retry_monitor(conn: redis::aio::ConnectionManager, check_interval: Dura
 }
 
 /// Start periodic background that checks for expired jobs and cleans them up.
-fn start_expiry_monitor(conn: redis::aio::ConnectionManager, check_interval: Duration) {
+fn start_expiry_monitor(conn: redis::aio::ConnectionManager, check_interval: Duration, expiry_check_statuses: Vec<job::Status>) {
     info!(
         "Checking job expiry every {}",
         humantime::format_duration(check_interval)
@@ -60,7 +61,7 @@ fn start_expiry_monitor(conn: redis::aio::ConnectionManager, check_interval: Dur
         let mut conn = conn;
         loop {
             interval.tick().await;
-            if let Err(err) = RedisManager::check_job_expiry(&mut conn).await {
+            if let Err(err) = RedisManager::check_job_expiry(&mut conn, expiry_check_statuses.clone()).await {
                 error!("Job expiry monitoring failed: {}", err);
             }
         }

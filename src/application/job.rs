@@ -454,11 +454,11 @@ impl RedisJob {
     ///
     /// Callers should typically check for job expiry outside of a transaction (and probably in a pipeline),
     /// then only call this on jobs to expire (since transaction here is much more expensive).
-    pub async fn apply_expiry<C: ConnectionLike + Send>(&self, conn: &mut C) -> OcyResult<bool> {
+    pub async fn apply_expiry<C: ConnectionLike + Send>(&self, conn: &mut C, expiry_check_statuses: &Vec<job::Status>) -> OcyResult<bool> {
         let expired: bool = transaction_async!(conn, &[&self.key], {
             if job::ExpiryMeta::from_conn(conn, &self.key)
                 .await?
-                .should_expire()
+                .should_expire(expiry_check_statuses)
             {
                 let result: Option<()> = self
                     .delete_in_pipe(conn, redis::pipe().atomic())
