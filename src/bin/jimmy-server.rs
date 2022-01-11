@@ -6,7 +6,7 @@ use jimmy::handlers;
 use jimmy::application::RedisManager;
 use jimmy::models::OcyError;
 
-#[actix_rt::main]
+#[actix_web::main]
 async fn main() -> std::io::Result<()> {
     // Parse CLI config, or exit with non-zero status code on error.
     let config = jimmy::config::parse_config_from_cli_args();
@@ -26,32 +26,28 @@ async fn main() -> std::io::Result<()> {
 
     let redis_url = config.redis_url();
 
-    let redis_client = match redis::Client::open(redis_url) {
-        Ok(client) => client,
-        Err(err) => {
-            eprintln!("Failed to initialise Redis client: {}", err);
-            std::process::exit(1);
+    let pool = {
+        let pool_cfg = deadpool_redis::Config::from_url(redis_url);
+        match pool_cfg.create_pool(Some(deadpool_redis::Runtime::Tokio1)) {
+            Ok(pool) => pool,
+            Err(err) => {
+                eprintln!("Failed to initialise Redis connection pool: {}", err);
+                std::process::exit(1);
+            } 
         }
     };
 
-    let redis_manager = match redis_client.get_tokio_connection_manager().await {
-        Ok(rm) => rm,
-        Err(err) => {
-            eprintln!("Failed to initialise Redis connection manager for {}: {}", redis_url, err);
-            std::process::exit(1);
-        }
-    };
     debug!("Initialised Redis connection pool to {}", redis_url);
 
     // Create/update any queues found in the config file, unless they already exist with the same settings.
-    if let Err(err) = create_queues_from_config(redis_manager.clone(), &config.queue).await {
+    if let Err(err) = create_queues_from_config(&pool, &config.queue).await {
         eprintln!("Failed to initialise queues from configuration file: {}", err);
         std::process::exit(1);
     }
 
     let http_server_addr = config.server_addr();
     let app_state = web::Data::new(jimmy::models::ApplicationState {
-        redis_conn_manager: redis_manager.clone(),
+        redis_conn_pool: pool.clone(),
         config: config.clone(),
     });
 
@@ -164,7 +160,7 @@ async fn main() -> std::io::Result<()> {
     }
 
     debug!("Starting background monitor tasks");
-    jimmy::application::monitor::start_monitors(redis_manager.clone(), &config.server);
+    jimmy::application::monitor::start_monitors(&pool, &config.server);
 
     // Start HTTP server.
     info!("Starting queue server at: {}", &http_server_addr);
@@ -173,13 +169,15 @@ async fn main() -> std::io::Result<()> {
 
 /// Creates any queues found in
 async fn create_queues_from_config(
-    mut conn: redis::aio::ConnectionManager,
+    pool: &deadpool_redis::Pool,
     queues: &Option<HashMap<String, jimmy::models::queue::Settings>>,
 ) -> jimmy::models::OcyResult<()> {
     let queues = match queues {
         Some(queues) => queues,
         None => return Ok(()),
     };
+
+    let mut conn = pool.get().await?;
 
     debug!("Ensuring that {} queue(s) from configuration file exist", queues.len());
     for (name, settings) in queues {
