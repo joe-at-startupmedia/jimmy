@@ -425,7 +425,7 @@ async fn job_retries() {
 
     // 2nd failure: job timeout
     let job_id = qw.next_job(&mut conn).await.id();
-    tokio::time::delay_for(time::Duration::from_secs(2)).await;
+    tokio::time::sleep(time::Duration::from_secs(2)).await;
     assert_eq!(RedisManager::check_job_timeouts(&mut conn).await.unwrap(), vec![job_id]);
     assert_eq!(qw.job_status(&mut conn, job_id).await, job::Status::TimedOut);
 
@@ -646,7 +646,7 @@ async fn update_job_heartbeat() {
     RedisManager::update_job_heartbeat(&mut conn, job_id).await.unwrap();
     let hb1 = qw.job_meta(&mut conn, job_id).await.last_heartbeat().unwrap();
 
-    tokio::time::delay_for(time::Duration::from_secs(1)).await;
+    tokio::time::sleep(time::Duration::from_secs(1)).await;
 
     RedisManager::update_job_heartbeat(&mut conn, job_id).await.unwrap();
     let hb2 = qw.job_meta(&mut conn, job_id).await.last_heartbeat().unwrap();
@@ -804,14 +804,14 @@ async fn job_heartbeat_timeout() {
     assert_eq!(qw.job_status(&mut conn, job_id_b).await, job::Status::Running);
     assert_eq!(qw.job_status(&mut conn, job_id_c).await, job::Status::Running);
 
-    tokio::time::delay_for(time::Duration::from_secs(2)).await;
+    tokio::time::sleep(time::Duration::from_secs(2)).await;
     assert_eq!(RedisManager::check_job_timeouts(&mut conn).await.unwrap(), vec![job_id_a]);
     assert_eq!(qw.job_status(&mut conn, job_id_a).await, job::Status::TimedOut);
     assert_eq!(qw.job_status(&mut conn, job_id_b).await, job::Status::Running);
     assert_eq!(qw.job_status(&mut conn, job_id_c).await, job::Status::Running);
 
     RedisManager::update_job_heartbeat(&mut conn, job_id_c).await.unwrap();
-    tokio::time::delay_for(time::Duration::from_secs(2)).await;
+    tokio::time::sleep(time::Duration::from_secs(2)).await;
     assert_eq!(RedisManager::check_job_timeouts(&mut conn).await.unwrap(), vec![job_id_b]);
     assert_eq!(qw.job_status(&mut conn, job_id_a).await, job::Status::TimedOut);
     assert_eq!(qw.job_status(&mut conn, job_id_b).await, job::Status::TimedOut);
@@ -844,7 +844,7 @@ async fn job_timeout() {
     assert_eq!(qw.job_status(&mut conn, job_id_a).await, job::Status::Running);
     assert_eq!(qw.job_status(&mut conn, job_id_b).await, job::Status::Running);
 
-    tokio::time::delay_for(time::Duration::from_secs(2)).await;
+    tokio::time::sleep(time::Duration::from_secs(2)).await;
     assert_eq!(RedisManager::check_job_timeouts(&mut conn).await.unwrap(), vec![1]);
     assert_eq!(qw.job_status(&mut conn, job_id_a).await, job::Status::TimedOut);
     assert_eq!(qw.job_status(&mut conn, job_id_b).await, job::Status::Running);
@@ -883,7 +883,7 @@ async fn job_expiry() {
     // jobs in ended queue (i.e. one completed and one cancelled) should expire
     let mut expected_expired = vec![job_id_completed, job_id_cancelled,];
     expected_expired.sort();
-    tokio::time::delay_for(time::Duration::from_secs(2)).await;
+    tokio::time::sleep(time::Duration::from_secs(2)).await;
     let mut expired = RedisManager::check_job_expiry(&mut conn, config.expiry_check_statuses.clone()).await.unwrap();
     expired.sort();
     assert_eq!(expired, expected_expired);
@@ -897,7 +897,7 @@ async fn job_expiry() {
 
     assert_eq!(RedisManager::ended_queue_size(&mut conn).await.unwrap(), 2); // one failed, one timed_out
 
-    tokio::time::delay_for(time::Duration::from_secs(2)).await;
+    tokio::time::sleep(time::Duration::from_secs(2)).await;
     let mut expired = RedisManager::check_job_expiry(&mut conn, config.expiry_check_statuses.clone()).await.unwrap();
     expired.sort();
     assert_eq!(expired, expected_expired);
@@ -950,7 +950,7 @@ async fn create_job_in_all_states(
     // 5th job should timeout
     RedisManager::next_queued_job(conn, queue).await.unwrap();
 
-    tokio::time::delay_for(time::Duration::from_secs(2)).await;
+    tokio::time::sleep(time::Duration::from_secs(2)).await;
     assert_eq!(RedisManager::check_job_timeouts(conn).await.unwrap(), vec![job_id_timed_out]);
 
     assert_eq!(RedisManager::job_status(conn, job_id_running).await, Ok(job::Status::Running));
